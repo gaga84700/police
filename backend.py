@@ -5,23 +5,69 @@ from PIL import Image
 import threading
 
 class ModelHandler:
-    def __init__(self, model_id="vikhyat/moondream2"):
+    def __init__(self, model_id="vikhyatk/moondream2", device_pref="auto"):
         """
         Initializes the Moondream model.
+        device_pref: 'auto', 'cpu', 'cuda'
         """
-        print(f"Loading model: {model_id}...")
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Using device: {self.device}")
+        print(f"Loading model: {model_id} with preference: {device_pref}...")
+        
+        self.device = "cpu"
+        
+        # Determine target device
+        if device_pref == "cpu":
+            self.device = "cpu"
+        elif device_pref == "cuda":
+             if torch.cuda.is_available():
+                 self.device = "cuda"
+             else:
+                 print("CUDA requested but not available. Falling back to CPU.")
+                 self.device = "cpu"
+        else: # auto
+             self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        print(f"Target device: {self.device}")
         
         # Load model and tokenizer
         # trust_remote_code=True is required for moondream
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id, 
-            trust_remote_code=True,
-            revision="2024-08-26" # Pinning revision for stability if needed, or remove
-        ).to(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id, revision="2024-08-26")
-        print("Model loaded successfully.")
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_id, 
+                trust_remote_code=True,
+                attn_implementation="eager",
+                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
+            ).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+            
+            # Test inference if on CUDA to catch "no kernel image" errors early
+            if self.device == "cuda":
+                 print("Performing self-test on CUDA...")
+                 try:
+                     # Create a tiny dummy image
+                     dummy = Image.new('RGB', (32, 32))
+                     enc = self.model.encode_image(dummy)
+                     # If we got here, encoding worked
+                     print("CUDA self-test passed.")
+                 except Exception as e:
+                     print(f"CUDA self-test failed: {e}")
+                     if device_pref == "auto":
+                         print("Auto-fallback to CPU...")
+                         self.device = "cpu"
+                         # Reload model on CPU
+                         self.model = AutoModelForCausalLM.from_pretrained(
+                            model_id, 
+                            trust_remote_code=True,
+                            attn_implementation="eager",
+                            torch_dtype=torch.float32
+                        ).to(self.device)
+                     else:
+                         raise e # Re-raise if user specifically asked for CUDA
+
+            print(f"Model loaded successfully on {self.device}.")
+            
+        except Exception as e:
+            print(f"Failed to load model: {e}")
+            raise e
 
     def analyze_frame(self, frame_pil, prompt):
         """
@@ -78,13 +124,15 @@ class VideoProcessor:
         # We verify 1 frame per second
         current_sec = 0
         
-        print(f"Starting analysis: {video_path}, Duration: {duration}s")
+        print(f"[Analysis Loop] Starting analysis: {video_path}, Duration: {duration}s, Total Frames: {total_frames}, FPS: {fps}")
         
         while self.running and current_sec < duration:
             # Set position
-            cap.set(cv2.CAP_PROP_POS_MSEC, current_sec * 1000)
+            target_pos = current_sec * 1000
+            cap.set(cv2.CAP_PROP_POS_MSEC, target_pos)
             ret, frame = cap.read()
             if not ret:
+                print(f"[Analysis Loop] Frame read failed at second {current_sec}. Stopping.")
                 break
             
             # Convert to PIL
@@ -92,19 +140,13 @@ class VideoProcessor:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame_pil = Image.fromarray(frame_rgb)
             
-            # Run model
-            # We wrap the user prompt to ask for existence.
-            # Or we assume the user knows prompts. 
-            # "幫我找門被打開的時候" -> "Is the door being opened?" (Translation needed?)
-            # Moondream works best with English. The user prompt might be in Chinese.
-            # We might need a small translation layer or ask user to input English.
-            # Assuming user inputs English or we match Chinese keywords against generated caption?
-            # 
-            # WAITING FOR CLARIFICATION OR JUST IMPLEMENT GENERIC
-            # Let's assume for now we use the prompt as is, 
-            # but maybe we should format it as a Yes/No question if it isn't one.
-            
-            answer = self.model_handler.analyze_frame(frame_pil, prompt)
+            print(f"[Analysis Loop] Analyzing frame at {current_sec}s...")
+            try:
+                answer = self.model_handler.analyze_frame(frame_pil, prompt)
+                print(f"[Analysis Loop] Model Answer: {answer}")
+            except Exception as e:
+                print(f"[Analysis Loop] Model Error: {e}")
+                answer = "Error"
             
             # Refined matching logic
             answer_lower = answer.lower().strip()
@@ -112,9 +154,6 @@ class VideoProcessor:
             if answer_lower.startswith("yes"):
                 print(f"[MATCH] Seconds: {current_sec}, Answer: {answer}")
                 callback_match(current_sec)
-            else:
-                pass
-                # print(f"Seconds: {current_sec}, Answer: {answer}")
             
             callback_progress(current_sec / duration)
             current_sec += 1

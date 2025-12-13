@@ -2,11 +2,31 @@ import sys
 import cv2
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QLineEdit, 
-                               QFileDialog, QListWidget, QProgressBar, QSplitter)
-from PySide6.QtCore import Qt, QTimer, Slot, Signal, QThread
+                               QFileDialog, QListWidget, QProgressBar, QSplitter, 
+                               QTextEdit, QComboBox)
+from PySide6.QtCore import Qt, QTimer, Slot, Signal, QThread, QObject
 from PySide6.QtGui import QImage, QPixmap
 import backend
+import sys # ensures sys is available
 from deep_translator import GoogleTranslator
+
+# Global signal for logging
+class Logger(QObject):
+    log_signal = Signal(str)
+
+logger = Logger()
+
+# Redirect stdout to logger
+class StreamRedirector:
+    def write(self, text):
+        if text.strip():
+            logger.log_signal.emit(str(text))
+    def flush(self):
+        pass
+
+sys.stdout = StreamRedirector()
+sys.stderr = StreamRedirector()
+
 
 class TranslationThread(QThread):
     finished = Signal(str)
@@ -23,7 +43,10 @@ class TranslationThread(QThread):
         except Exception as e:
             # Fallback to original text if translation fails (e.g. no internet)
             print(f"Translation error: {e}")
-            self.finished.emit(self.text)
+            # Do NOT emit original text blindly if it's identical to input, 
+            # but user sees it anyway. The print will now show in console.
+            self.finished.emit(f"[Error: {e}]")
+
 
 
 class AnalysisWorker(QThread):
@@ -45,6 +68,7 @@ class AnalysisWorker(QThread):
         # Query: "Is 'Door opening' visible in this image? Answer yes or no."
         formatted_prompt = f"Is '{self.prompt}' visible in this image? Answer yes or no."
         
+        self.processor.running = True  # Fix: Must enable running flag!
         self.processor._analyze_loop(
             self.video_path, 
             formatted_prompt, 
@@ -102,6 +126,20 @@ class MainWindow(QMainWindow):
         self.btn_load = QPushButton("載入影片 (Load Video)")
         self.btn_load.clicked.connect(self.load_video)
         
+        # Device Selector
+        device_layout = QVBoxLayout()
+        self.combo_device = QComboBox()
+        self.combo_device.addItems(["Auto", "CPU", "GPU (CUDA)"])
+        self.combo_device.setToolTip("選擇運算裝置 (Select Device)")
+        
+        self.btn_reload = QPushButton("重載模型 (Reload)")
+        self.btn_reload.clicked.connect(self.load_model)
+        self.btn_reload.setMaximumWidth(100)
+        
+        device_layout.addWidget(QLabel("Device:"))
+        device_layout.addWidget(self.combo_device)
+        device_layout.addWidget(self.btn_reload)
+        
         # New Prompt Layout
         prompt_layout = QVBoxLayout()
         
@@ -123,12 +161,20 @@ class MainWindow(QMainWindow):
         self.btn_start.setEnabled(False) # Enable after video load
         self.btn_start.setMinimumHeight(50) # Make it bigger
         
+        self.btn_stop = QPushButton("停止分析 (Stop)")
+        self.btn_stop.clicked.connect(self.stop_analysis)
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.setMinimumHeight(50)
+        self.btn_stop.setStyleSheet("background-color: #8b0000; color: white;") # Dark red to indicate stop
+
         header_layout.addWidget(self.btn_load)
+        header_layout.addLayout(device_layout)
         header_layout.addLayout(prompt_layout)
         header_layout.addWidget(self.btn_start)
+        header_layout.addWidget(self.btn_stop)
         
         # Header layout stretch
-        header_layout.setStretch(1, 1) # Give prompt area more space
+        header_layout.setStretch(2, 1) # Give prompt area more space (index changed due to insert)
         
         main_layout.addLayout(header_layout)
 
@@ -168,6 +214,20 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(splitter)
         
+        # Logs
+        log_layout = QVBoxLayout()
+        log_layout.addWidget(QLabel("系統日誌 (Logs):"))
+        self.text_log = QTextEdit()
+        self.text_log.setReadOnly(True)
+        self.text_log.setMaximumHeight(150)
+        self.text_log.setStyleSheet("background-color: #1e1e1e; color: #00ff00; font-family: Consolas;")
+        log_layout.addWidget(self.text_log)
+        main_layout.addLayout(log_layout)
+        
+        # Connect logger
+        logger.log_signal.connect(self.append_log)
+
+        
         # Footer: Progress
         self.progress_bar = QProgressBar()
         main_layout.addWidget(self.progress_bar)
@@ -176,13 +236,34 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("準備就緒 (系統初始化中，請稍候模型載入...)")
 
     def load_model(self):
-        self.status_bar.showMessage("正在載入 AI 模型 (Moondream2)... 這可能需要一點時間")
+        # Determine device pref
+        txt = self.combo_device.currentText()
+        pref = "auto"
+        if "CPU" in txt: pref = "cpu"
+        if "GPU" in txt: pref = "cuda"
+        
+        self.status_bar.showMessage(f"正在載入 AI 模型 ({pref})...")
         QApplication.processEvents()
+        
         try:
-            self.model_handler = backend.ModelHandler()
-            self.status_bar.showMessage("模型載入完成。請載入影片。")
+            # If re-loading, clean up old (optional, but good practice)
+            if self.model_handler:
+                del self.model_handler
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+            self.model_handler = backend.ModelHandler(device_pref=pref)
+            
+            # Update UI to reflect actual device used
+            actual = self.model_handler.device
+            self.status_bar.showMessage(f"模型載入完成。使用裝置: {actual}")
+            logger.log_signal.emit(f"Model loaded on: {actual}")
+            
         except Exception as e:
             self.status_bar.showMessage(f"模型載入失敗: {e}")
+            logger.log_signal.emit(f"Model Load Error: {e}")
 
     def load_video(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "選擇影片", "", "Video Files (*.mp4 *.avi *.mkv)")
@@ -246,20 +327,29 @@ class MainWindow(QMainWindow):
              prompt = self.input_zh.text()
 
         if not prompt:
-        if not prompt:
             self.status_bar.showMessage("請輸入 Prompt!")
             return
 
         self.list_results.clear()
         self.progress_bar.setValue(0)
-        self.btn_start.setEnabled(False)
-        self.status_bar.showMessage("正在分析中...")
-        
         self.worker = AnalysisWorker(self.video_path, prompt, self.model_handler)
         self.worker.match_found.connect(self.add_match)
         self.worker.progress_update.connect(self.update_progress)
         self.worker.finished.connect(self.analysis_finished)
+        
+        # Update UI state
+        self.btn_start.setEnabled(False)
+        self.btn_load.setEnabled(False) # Prevent changing video while analyzing
+        self.btn_stop.setEnabled(True)
+        
         self.worker.start()
+
+    def stop_analysis(self):
+        if self.worker:
+            self.status_bar.showMessage("正在停止分析...")
+            self.logger_log("User requested stop...") # Helper or direct log
+            self.worker.stop()
+            self.btn_stop.setEnabled(False) # Prevent multiple clicks
 
     def add_match(self, timestamp):
         # Convert seconds to HH:MM:SS
@@ -276,6 +366,8 @@ class MainWindow(QMainWindow):
 
     def analysis_finished(self):
         self.btn_start.setEnabled(True)
+        self.btn_load.setEnabled(True)
+        self.btn_stop.setEnabled(False)
         self.status_bar.showMessage("分析完成")
         self.worker = None
 
@@ -320,6 +412,15 @@ class MainWindow(QMainWindow):
     def on_translation_finished(self, text):
         self.input_en.setText(text)
         # self.status_bar.showMessage("翻譯完成 (Translated)")
+
+    def append_log(self, text):
+        self.text_log.append(text)
+        self.text_log.verticalScrollBar().setValue(self.text_log.verticalScrollBar().maximum())
+        
+    def logger_log(self, text):
+         # Creating a valid Log message manually if needed
+         self.append_log(text)
+
 
 
 if __name__ == "__main__":
