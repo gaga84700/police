@@ -1,73 +1,150 @@
-# 🚓 AI Video Search Tool (Police Edition)
+# 🚓 AI Video Search Tool
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![PySide6](https://img.shields.io/badge/GUI-PySide6-green)
 ![Moondream2](https://img.shields.io/badge/AI-Moondream2-purple)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-這是一個專為警察與調查人員設計的單機版影片分析工具。利用輕量級的視覺語言模型 (VLM) `vikhyat/moondream2`，讓使用者能透過自然語言（如「有人開門」、「紅色車子」）快速搜尋長時間監視器畫面中的特定關鍵事件。
+**English** | [繁體中文](README_zh-TW.md)
 
-> **隱私聲明**: 本工具所有運算皆在本地端 (Local) 執行，無需上傳影片至雲端，確保案件資料絕對安全。
+A local AI-powered video analysis tool using **Moondream2** Vision Language Model. Search surveillance footage using natural language queries like "person in red" or "white car" - all completely offline.
+
+> **Privacy First**: All processing runs 100% locally. No cloud uploads, no data leakage.
 
 ---
 
-## ✨ 功能特色 (Features)
+## ✨ Features
 
-- 🔒 **完全離線執行**: 確保機敏影片資料不會外流。
-- 🔍 **自然語言搜尋**: 整合 `deep-translator`，支援直接輸入中文關鍵字，系統自動翻譯並進行 AI 語意搜尋。
-- ⚡ **快速驗證機制**: 搜尋結果以時間軸列表呈現，點擊即可瞬間跳轉至該片段進行人工確認。
-- 🎞️ **支援多種格式**: 支援 MP4, AVI, MKV 等常見監控影片格式。
-- 🖥️ **直觀介面**: 基於 PySide6 的極簡介面，專注於案件分析工作。
+- 🔒 **Fully Offline** - Sensitive footage never leaves your machine
+- 🔍 **Natural Language Search** - Describe what you're looking for in plain text
+- 🌐 **Chinese Support** - Auto-translation from Chinese to English via `deep-translator`
+- 📊 **Confidence Scores** - Filter results by AI confidence threshold (0-100%)
+- 🎬 **Video Controls** - Timeline slider, play/pause, click-to-seek
+- ⏱️ **Time Stats** - See video duration and analysis time
+- 🎞️ **Multi-format** - Supports MP4, AVI, MKV
 
-## 🛠️ 安裝需求 (Requirements)
+## 📸 Screenshot
 
-- **OS**: Windows 10 / 11
-- **Python**: 3.10 或更高版本
-- **GPU**: 建議使用 NVIDIA 顯示卡並安裝 CUDA 驅動程式以獲得最佳效能（CPU 亦可運行但速度較慢）。
+```
+┌─────────────────────────────────────────────────────────────┐
+│ [Load Video] [Device: Auto ▼] [中文輸入] [Threshold: 70%]  │
+│ [Start Search] [Stop]                                       │
+├─────────────────────────────────────┬───────────────────────┤
+│                                     │ Search Results:       │
+│         Video Preview               │ [Score: 85] 00:01:23  │
+│                                     │ [Score: 92] 00:02:45  │
+│    ══════════●══════════            │ [Score: 78] 00:05:12  │
+│    [Play/Pause] [Pause]             │                       │
+├─────────────────────────────────────┴───────────────────────┤
+│ System Logs                                                 │
+│ > Model loaded on: cuda                                     │
+│ > Analysis Complete! Video: 120.0s, Time: 15.4s             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## 🚀 快速開始 (Quick Start)
+## 🛠️ Requirements
 
-### 1. 複製專案與安裝依賴
+- **OS**: Windows 10/11, Linux, macOS
+- **Python**: 3.10+
+- **GPU**: NVIDIA GPU with CUDA recommended (CPU works but slower)
+- **VRAM**: 4GB+ for smooth operation
+
+## ✅ Tested Configurations
+
+| Status | GPU | Python | PyTorch | CUDA | Notes |
+|--------|-----|--------|---------|------|-------|
+| ✅ Working | RTX 5070 Ti | 3.13.9 | 2.9.1+cu130 | 13.0 | Blackwell/SM120 support |
+| ✅ Working | RTX 3090 | 3.10.x | 2.1.0+cu118 | 11.8 | Ampere |
+| ❌ Failed | RTX 5070 Ti | 3.10.9 | 2.6.0+cu124 | 12.4 | `no kernel image` error |
+
+> ⚠️ **RTX 50 Series Users**: Requires PyTorch 2.9+ with CUDA 13.0 for SM120 architecture support.
+
+## 🚀 Installation
+
+### 1. Clone & Setup
 
 ```bash
-# 建立並啟動虛擬環境 (建議)
+git clone https://github.com/YOUR_USERNAME/ai-video-search.git
+cd ai-video-search
+
+# Create virtual environment
 python -m venv venv
+
+# Activate (Windows)
 venv\Scripts\activate
 
-# 安裝所需套件
+# Activate (Linux/Mac)
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2. 啟動程式
+### 2. GPU Support (Optional but Recommended)
 
-直接執行目錄下的批次檔：
+For NVIDIA GPU acceleration, install PyTorch with CUDA:
+
 ```bash
-run.bat
+# Check your CUDA version first, then install matching PyTorch
+# Example for CUDA 12.1:
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
-或使用指令：
+
+### 3. Run
+
 ```bash
+# Windows
+run.bat
+
+# Or directly
 python ui_main.py
 ```
 
-*注意：首次執行時，系統會自動下載 moondream2 模型 (約 3GB)，請耐心等候。*
+> **Note**: First run downloads the Moondream2 model (~3GB). Please wait.
 
-## 📖 使用教學 (Usage)
+## 📖 Usage
 
-1. **載入影片**: 點擊左上角的 `載入影片 (Load Video)` 按鈕。
-2. **輸入關鍵字**: 在上方輸入框輸入您想尋找的畫面描述（支援中文，例如：「白色休旅車」、「戴帽子的男人」）。
-3. **自動翻譯**: 系統會自動將中文翻譯為英文顯示於下方唯讀欄位，確認翻譯無誤後即可搜尋。
-4. **開始搜尋**: 點擊 `開始搜尋`，程式將逐秒分析影片內容。
-5. **查看結果**: 
-   - 右側列表 "Found at..." 顯示發現目標的時間點。
-   - 點擊列表項目，左側預覽視窗將自動跳轉至該時間點。
+1. **Load Video**: Click `Load Video` button
+2. **Enter Keywords**: Type in Chinese (e.g., "紅色車子") or English
+3. **Set Threshold**: Adjust confidence slider (70% default)
+4. **Start Search**: Click `Start` - AI analyzes frame-by-frame
+5. **View Results**: 
+   - Click any result to jump to that timestamp
+   - Video auto-plays from clicked position
+   - Scores show AI confidence level
 
-## 🔧 技術棧 (Tech Stack)
+## 🔧 Tech Stack
 
-- **Frontend**: PySide6 (Qt for Python)
-- **Backend AI**: HuggingFace Transformers, Moondream2 (Tiny VLM)
-- **Video Processing**: OpenCV
-- **Translation**: deep-translator (Google Translate API)
+| Component | Technology |
+|-----------|------------|
+| GUI | PySide6 (Qt for Python) |
+| AI Model | [Moondream2](https://huggingface.co/vikhyatk/moondream2) (~1.87B params) |
+| Video | OpenCV |
+| Translation | deep-translator (Google Translate) |
+
+## 📁 Project Structure
+
+```
+ai-video-search/
+├── ui_main.py      # Main GUI application
+├── backend.py      # AI model & video processing
+├── run.bat         # Windows launcher
+├── requirements.txt
+└── README.md
+```
+
+## ⚠️ Limitations
+
+- Model accuracy is lower than GPT-4V (but runs locally!)
+- Complex scene understanding may be limited
+- English prompts work better than Chinese (auto-translation helps)
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+MIT License - Free for personal and commercial use.
+
+## 🙏 Acknowledgments
+
+- [Moondream2](https://huggingface.co/vikhyatk/moondream2) by vikhyatk
+- [PySide6](https://www.qt.io/qt-for-python)
+- [deep-translator](https://github.com/nidhaloff/deep-translator)

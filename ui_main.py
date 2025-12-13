@@ -131,6 +131,122 @@ class MainWindow(QMainWindow):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # ===== TECH STYLE CSS =====
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #0a0a0f;
+            }
+            QWidget {
+                background-color: #0a0a0f;
+                color: #e0e0e0;
+                font-family: 'Segoe UI', Arial;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2a2a3a, stop:1 #1a1a2a);
+                border: 1px solid #00d4ff;
+                border-radius: 6px;
+                padding: 8px 16px;
+                color: #00d4ff;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3a3a4a, stop:1 #2a2a3a);
+                border: 1px solid #00ffff;
+                color: #00ffff;
+            }
+            QPushButton:pressed {
+                background: #00d4ff;
+                color: #0a0a0f;
+            }
+            QPushButton:disabled {
+                background: #1a1a1a;
+                border: 1px solid #333;
+                color: #555;
+            }
+            QLineEdit {
+                background-color: #1a1a2a;
+                border: 1px solid #00d4ff;
+                border-radius: 4px;
+                padding: 8px;
+                color: #ffffff;
+            }
+            QLineEdit:focus {
+                border: 2px solid #00ffff;
+            }
+            QComboBox {
+                background-color: #1a1a2a;
+                border: 1px solid #00d4ff;
+                border-radius: 4px;
+                padding: 6px;
+                color: #00d4ff;
+            }
+            QComboBox:hover {
+                border: 1px solid #00ffff;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #1a1a2a;
+                border: 1px solid #00d4ff;
+                selection-background-color: #00d4ff;
+                selection-color: #0a0a0f;
+            }
+            QSlider::groove:horizontal {
+                background: #1a1a2a;
+                height: 8px;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #00d4ff;
+                width: 18px;
+                margin: -5px 0;
+                border-radius: 9px;
+            }
+            QSlider::sub-page:horizontal {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #00d4ff, stop:1 #00ff88);
+                border-radius: 4px;
+            }
+            QProgressBar {
+                background-color: #1a1a2a;
+                border: 1px solid #00d4ff;
+                border-radius: 4px;
+                text-align: center;
+                color: #00d4ff;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #00d4ff, stop:1 #00ff88);
+                border-radius: 3px;
+            }
+            QListWidget {
+                background-color: #0f0f1a;
+                border: 1px solid #00d4ff;
+                border-radius: 4px;
+                color: #e0e0e0;
+            }
+            QListWidget::item:selected {
+                background-color: #00d4ff;
+                color: #0a0a0f;
+            }
+            QListWidget::item:hover {
+                background-color: #1a2a3a;
+            }
+            QLabel {
+                color: #00d4ff;
+                font-weight: bold;
+            }
+            QSplitter::handle {
+                background-color: #00d4ff;
+                width: 2px;
+            }
+        """)
 
         # Header: Controls
         header_layout = QHBoxLayout()
@@ -138,19 +254,14 @@ class MainWindow(QMainWindow):
         self.btn_load = QPushButton("載入影片 (Load Video)")
         self.btn_load.clicked.connect(self.load_video)
         
-        # Device Selector
-        device_layout = QVBoxLayout()
+        # Device Selector (GPU default, no Auto)
+        device_layout = QHBoxLayout()
+        device_layout.addWidget(QLabel("裝置:"))
         self.combo_device = QComboBox()
-        self.combo_device.addItems(["Auto", "CPU", "GPU (CUDA)"])
+        self.combo_device.addItems(["GPU (CUDA)", "CPU"])
         self.combo_device.setToolTip("選擇運算裝置 (Select Device)")
-        
-        self.btn_reload = QPushButton("重載模型 (Reload)")
-        self.btn_reload.clicked.connect(self.load_model)
-        self.btn_reload.setMaximumWidth(100)
-        
-        device_layout.addWidget(QLabel("Device:"))
+        self.combo_device.setMinimumWidth(120)
         device_layout.addWidget(self.combo_device)
-        device_layout.addWidget(self.btn_reload)
         
         # New Prompt Layout
         prompt_layout = QVBoxLayout()
@@ -190,16 +301,51 @@ class MainWindow(QMainWindow):
         thresh_layout.addWidget(self.slider_thresh)
         prompt_layout.addLayout(thresh_layout)
         
-        self.btn_start = QPushButton("開始搜尋 (Start)")
+        self.btn_start = QPushButton("▶ 開始搜尋")
         self.btn_start.clicked.connect(self.start_analysis)
-        self.btn_start.setEnabled(False) # Enable after video load
-        self.btn_start.setMinimumHeight(50) # Make it bigger
+        self.btn_start.setEnabled(False)
+        self.btn_start.setMinimumHeight(45)
+        self.btn_start.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #00aa44, stop:1 #006622);
+                border: 1px solid #00ff66;
+                color: #ffffff;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #00cc55, stop:1 #008833);
+            }
+            QPushButton:disabled {
+                background: #1a1a1a;
+                border: 1px solid #333;
+                color: #555;
+            }
+        """)
         
-        self.btn_stop = QPushButton("停止分析 (Stop)")
+        self.btn_stop = QPushButton("■ 停止分析")
         self.btn_stop.clicked.connect(self.stop_analysis)
         self.btn_stop.setEnabled(False)
-        self.btn_stop.setMinimumHeight(50)
-        self.btn_stop.setStyleSheet("background-color: #8b0000; color: white;") # Dark red to indicate stop
+        self.btn_stop.setMinimumHeight(45)
+        self.btn_stop.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #aa2222, stop:1 #661111);
+                border: 1px solid #ff4444;
+                color: #ffffff;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #cc3333, stop:1 #882222);
+            }
+            QPushButton:disabled {
+                background: #1a1a1a;
+                border: 1px solid #333;
+                color: #555;
+            }
+        """)
 
         header_layout.addWidget(self.btn_load)
         header_layout.addLayout(device_layout)
@@ -265,8 +411,17 @@ class MainWindow(QMainWindow):
         log_layout.addWidget(QLabel("系統日誌 (Logs):"))
         self.text_log = QTextEdit()
         self.text_log.setReadOnly(True)
-        self.text_log.setMaximumHeight(150)
-        self.text_log.setStyleSheet("background-color: #1e1e1e; color: #00ff00; font-family: Consolas;")
+        self.text_log.setMaximumHeight(120)
+        self.text_log.setStyleSheet("""
+            QTextEdit {
+                background-color: #0a0a12;
+                color: #00ff88;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 11px;
+                border: 1px solid #00d4ff;
+                border-radius: 4px;
+            }
+        """)
         log_layout.addWidget(self.text_log)
         main_layout.addLayout(log_layout)
         
@@ -282,11 +437,9 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("準備就緒 (系統初始化中，請稍候模型載入...)")
 
     def load_model(self):
-        # Determine device pref
+        # Determine device pref (GPU default, no Auto)
         txt = self.combo_device.currentText()
-        pref = "auto"
-        if "CPU" in txt: pref = "cpu"
-        if "GPU" in txt: pref = "cuda"
+        pref = "cuda" if "GPU" in txt else "cpu"
         
         self.status_bar.showMessage(f"正在載入 AI 模型 ({pref})...")
         QApplication.processEvents()
