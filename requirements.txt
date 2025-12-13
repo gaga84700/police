@@ -1,0 +1,10 @@
+torch
+torchvision
+torchaudio
+transformers
+einops
+opencv-python
+pillow
+pyside6
+qdarktheme
+deep-translator

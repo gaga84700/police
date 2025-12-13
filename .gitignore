@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+
+# Local logs and debug
+*.log
+log.txt
+
+# Large files / Models
+*.mp4
+*.avi
+*.mkv
+models/
