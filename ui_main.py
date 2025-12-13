@@ -1,9 +1,11 @@
 import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import cv2
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                                QFileDialog, QListWidget, QProgressBar, QSplitter, 
-                               QTextEdit, QComboBox)
+                               QTextEdit, QComboBox, QSlider)
 from PySide6.QtCore import Qt, QTimer, Slot, Signal, QThread, QObject
 from PySide6.QtGui import QImage, QPixmap
 import backend
@@ -37,12 +39,12 @@ class TranslationThread(QThread):
 
     def run(self):
         try:
-            # Using deep_translator
-            translated = GoogleTranslator(source='auto', target='en').translate(self.text)
+            # Using deep_translator with explicit zh-TW source
+            translated = GoogleTranslator(source='zh-TW', target='en').translate(self.text)
             self.finished.emit(translated)
         except Exception as e:
             # Fallback to original text if translation fails (e.g. no internet)
-            print(f"Translation error: {e}")
+            logger.log_signal.emit(f"Translation error: {e}")
             # Do NOT emit original text blindly if it's identical to input, 
             # but user sees it anyway. The print will now show in console.
             self.finished.emit(f"[Error: {e}]")
@@ -54,26 +56,34 @@ class AnalysisWorker(QThread):
     progress_update = Signal(float)
     finished = Signal()
 
-    def __init__(self, video_path, prompt, model_handler):
+    def __init__(self, video_path, prompt, model_handler, threshold=None):
         super().__init__()
         self.video_path = video_path
         self.prompt = prompt
         self.model_handler = model_handler
+        self.threshold = threshold
         self.processor = backend.VideoProcessor(model_handler)
 
     def run(self):
-        # Determine strict or flexible matching
-        # For now, we append instructions to the prompt to get a yes/no
-        # User prompt: "Door opening"
-        # Query: "Is 'Door opening' visible in this image? Answer yes or no."
-        formatted_prompt = f"Is '{self.prompt}' visible in this image? Answer yes or no."
+        # Determine prompt format based on threshold
+        formatted_prompt = ""
+        if self.threshold is not None:
+             # Ask for score
+             formatted_prompt = f"Rate the confidence that '{self.prompt}' is in this image from 0 to 100. Return ONLY the number."
+        else:
+             formatted_prompt = f"Is '{self.prompt}' visible in this image? Answer yes or no."
         
+        # Log the prompt
+        logger.log_signal.emit(f"Starting Analysis with Prompt: [{formatted_prompt}]")
+        logger.log_signal.emit(f"Threshold: {self.threshold if self.threshold else 'None (Yes/No mode)'}")
+
         self.processor.running = True  # Fix: Must enable running flag!
         self.processor._analyze_loop(
             self.video_path, 
             formatted_prompt, 
             self.handle_match, 
-            self.handle_progress
+            self.handle_progress,
+            threshold=self.threshold # Pass threshold to loop
         )
         self.finished.emit()
 
@@ -143,10 +153,20 @@ class MainWindow(QMainWindow):
         # New Prompt Layout
         prompt_layout = QVBoxLayout()
         
+        # Input Area (ZH + Button)
+        zh_layout = QHBoxLayout()
+        
         self.input_zh = QLineEdit()
         self.input_zh.setPlaceholderText("在此輸入中文關鍵字 (例如: 紅色車子, 有人開門)...")
-        self.input_zh.textChanged.connect(self.on_zh_text_changed)
+        # self.input_zh.textChanged.connect(self.on_zh_text_changed) # Optional: enable/disable auto
         
+        self.btn_trans = QPushButton("翻譯 (Translate)")
+        self.btn_trans.clicked.connect(self.perform_translation)
+        
+        zh_layout.addWidget(self.input_zh)
+        zh_layout.addWidget(self.btn_trans)
+        
+        prompt_layout.addLayout(zh_layout)
         self.input_en = QLineEdit()
         self.input_en.setPlaceholderText("Translation (English) will appear here...")
         self.input_en.setReadOnly(True)
@@ -155,6 +175,18 @@ class MainWindow(QMainWindow):
         
         prompt_layout.addWidget(self.input_zh)
         prompt_layout.addWidget(self.input_en)
+        
+        # Threshold Slider
+        thresh_layout = QHBoxLayout()
+        self.lbl_thresh = QLabel("信賴度門檻 (Threshold): 70%")
+        self.slider_thresh = QSlider(Qt.Horizontal)
+        self.slider_thresh.setRange(0, 100)
+        self.slider_thresh.setValue(70)
+        self.slider_thresh.valueChanged.connect(self.update_thresh_label)
+        
+        thresh_layout.addWidget(self.lbl_thresh)
+        thresh_layout.addWidget(self.slider_thresh)
+        prompt_layout.addLayout(thresh_layout)
         
         self.btn_start = QPushButton("開始搜尋 (Start)")
         self.btn_start.clicked.connect(self.start_analysis)
@@ -319,12 +351,23 @@ class MainWindow(QMainWindow):
         if not self.video_path or not self.model_handler:
             return
         
-        # Use the English prompt if available, otherwise just use whatever is in zh (or mixed)
-        # But per requirements, we send the English style.
-        prompt = self.input_en.text()
-        if not prompt:
-             # Fallback if user didn't wait for translation or input empty
-             prompt = self.input_zh.text()
+        # Ensure we have English prompt
+        prompt_en = self.input_en.text()
+        prompt_zh = self.input_zh.text()
+        
+        if not prompt_en and prompt_zh:
+             self.status_bar.showMessage("正在進行翻譯 (Translating)...")
+             QApplication.processEvents() # Force UI update
+             try:
+                 # Force synchronous translation
+                 prompt_en = GoogleTranslator(source='zh-TW', target='en').translate(prompt_zh)
+                 self.input_en.setText(prompt_en)
+                 self.status_bar.showMessage(f"翻譯完成: {prompt_en}")
+             except Exception as e:
+                 print(f"Translation failed: {e}")
+                 prompt_en = prompt_zh # Fallback
+        
+        prompt = prompt_en if prompt_en else prompt_zh
 
         if not prompt:
             self.status_bar.showMessage("請輸入 Prompt!")
@@ -332,7 +375,10 @@ class MainWindow(QMainWindow):
 
         self.list_results.clear()
         self.progress_bar.setValue(0)
-        self.worker = AnalysisWorker(self.video_path, prompt, self.model_handler)
+        self.status_bar.showMessage("正在分析中...")
+        
+        thresh = self.slider_thresh.value()
+        self.worker = AnalysisWorker(self.video_path, prompt, self.model_handler, threshold=thresh)
         self.worker.match_found.connect(self.add_match)
         self.worker.progress_update.connect(self.update_progress)
         self.worker.finished.connect(self.analysis_finished)
@@ -404,14 +450,27 @@ class MainWindow(QMainWindow):
             self.input_en.clear()
             return
         
-        # self.status_bar.showMessage("正在翻譯 (Translating)...")
+        self.status_bar.showMessage("正在翻譯 (Translating)...")
+        self.btn_trans.setEnabled(False)
+        self.btn_trans.setText("翻譯中...")
+        
         self.trans_worker = TranslationThread(text)
         self.trans_worker.finished.connect(self.on_translation_finished)
         self.trans_worker.start()
 
     def on_translation_finished(self, text):
         self.input_en.setText(text)
-        # self.status_bar.showMessage("翻譯完成 (Translated)")
+        self.btn_trans.setEnabled(True)
+        self.btn_trans.setText("翻譯 (Translate)")
+        
+        if text.startswith("[Error"):
+             logger.log_signal.emit(f"Translation Failed: {text}")
+             self.status_bar.showMessage("翻譯失敗，請檢查網路或是翻譯服務")
+        else:
+             self.status_bar.showMessage("翻譯完成 (Translated)")
+
+    def update_thresh_label(self, val):
+        self.lbl_thresh.setText(f"信賴度門檻 (Threshold): {val}%")
 
     def append_log(self, text):
         self.text_log.append(text)

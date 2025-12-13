@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-call venv\Scripts\activate
-start /b python ui_main.py
+set PY=f:\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\python_embeded\python.exe
+start /b "" "%PY%" ui_main.py

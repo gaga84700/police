@@ -1,14 +1,16 @@
-import torch
+import os
 import sys
+
+# Add ComfyUI DLL paths
+comfy_path = r"f:\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\python_embeded"
+torch_lib = r"f:\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\python_embeded\Lib\site-packages\torch\lib"
+os.environ['PATH'] = comfy_path + ";" + torch_lib + ";" + os.environ['PATH']
+
+import torch
 
 print(f"Python: {sys.version}")
 print(f"Torch Version: {torch.__version__}")
 print(f"CUDA Available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"CUDA Version: {torch.version.cuda}")
-    print(f"Device Count: {torch.cuda.device_count()}")
-    print(f"Current Device: {torch.cuda.current_device()}")
     print(f"Device Name: {torch.cuda.get_device_name(0)}")
-    print(f"Device Capability: {torch.cuda.get_device_capability(0)}")
-else:
-    print("CUDA not available")

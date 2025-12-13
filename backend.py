@@ -115,7 +115,7 @@ class VideoProcessor:
         if self.thread:
             self.thread.join()
 
-    def _analyze_loop(self, video_path, prompt, callback_match, callback_progress):
+    def _analyze_loop(self, video_path, prompt, callback_match, callback_progress, threshold=None):
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -144,17 +144,35 @@ class VideoProcessor:
             try:
                 answer = self.model_handler.analyze_frame(frame_pil, prompt)
                 print(f"[Analysis Loop] Model Answer: {answer}")
+                
+                is_match = False
+                
+                if threshold is not None:
+                    # Score mode: Expect "85", "Confidence: 90", etc.
+                    # Simple heuristic: find the first number in the string
+                    import re
+                    nums = re.findall(r'\d+', answer)
+                    if nums:
+                        score = int(nums[0])
+                        print(f"  -> Parsed Score: {score}, Threshold: {threshold}")
+                        if score >= threshold:
+                            is_match = True
+                    else:
+                        print(f"  -> Could not parse score from '{answer}'")
+                
+                else:
+                    # Legacy Yes/No mode
+                    answer_lower = answer.lower().strip()
+                    if answer_lower.startswith("yes"):
+                        is_match = True
+                
+                if is_match:
+                    print(f"[MATCH] Seconds: {current_sec}, Answer: {answer}")
+                    callback_match(current_sec)
+
             except Exception as e:
                 print(f"[Analysis Loop] Model Error: {e}")
-                answer = "Error"
-            
-            # Refined matching logic
-            answer_lower = answer.lower().strip()
-            # Check if it starts with yes, or constitutes a clear affirmative
-            if answer_lower.startswith("yes"):
-                print(f"[MATCH] Seconds: {current_sec}, Answer: {answer}")
-                callback_match(current_sec)
-            
+                
             callback_progress(current_sec / duration)
             current_sec += 1
         
