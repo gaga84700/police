@@ -167,8 +167,10 @@ class VideoProcessor:
                         is_match = True
                 
                 if is_match:
-                    print(f"[MATCH] Seconds: {current_sec}, Answer: {answer}")
-                    callback_match(current_sec)
+                    # Pass score if available, otherwise assume high confidence for "Yes"
+                    final_score = score if (threshold is not None and 'score' in locals()) else None
+                    print(f"[MATCH] Seconds: {current_sec}, Answer: {answer}, Score: {final_score}")
+                    callback_match(current_sec, final_score)
 
             except Exception as e:
                 print(f"[Analysis Loop] Model Error: {e}")

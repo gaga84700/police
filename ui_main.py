@@ -52,9 +52,9 @@ class TranslationThread(QThread):
 
 
 class AnalysisWorker(QThread):
-    match_found = Signal(float)
+    match_found = Signal(float, object)  # seconds, score
     progress_update = Signal(float)
-    finished = Signal()
+    finished = Signal(object)  # error or None
 
     def __init__(self, video_path, prompt, model_handler, threshold=None):
         super().__init__()
@@ -85,10 +85,10 @@ class AnalysisWorker(QThread):
             self.handle_progress,
             threshold=self.threshold # Pass threshold to loop
         )
-        self.finished.emit()
+        self.finished.emit(None)
 
-    def handle_match(self, timestamp):
-        self.match_found.emit(timestamp)
+    def handle_match(self, timestamp, score=None):
+        self.match_found.emit(timestamp, score)
 
     def handle_progress(self, progress):
         self.progress_update.emit(progress)
@@ -108,6 +108,8 @@ class MainWindow(QMainWindow):
         self.cap = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_video_frame)
+        self.is_slider_drag = False
+        self.analysis_start_time = 0.0
         self.is_playing = False
         
         self.model_handler = None # Lazy load or async load
@@ -223,12 +225,24 @@ class MainWindow(QMainWindow):
         self.lbl_video.setMinimumSize(640, 360)
         
         # Video Controls
+        self.slider_video = QSlider(Qt.Horizontal)
+        self.slider_video.setRange(0, 1000)
+        self.slider_video.sliderPressed.connect(self.on_slider_pressed)
+        self.slider_video.sliderReleased.connect(self.on_slider_released)
+        self.slider_video.sliderMoved.connect(self.seek_video)
+        
         vid_ctrl_layout = QHBoxLayout()
-        self.btn_play = QPushButton("播放/暫停")
+        self.btn_play = QPushButton("播放/暫停 (Play/Pause)")
         self.btn_play.clicked.connect(self.toggle_play)
+        
+        self.btn_pause = QPushButton("暫停播放 (Pause)")
+        self.btn_pause.clicked.connect(self.pause_video)
+        
         vid_ctrl_layout.addWidget(self.btn_play)
+        vid_ctrl_layout.addWidget(self.btn_pause)
         
         video_layout.addWidget(self.lbl_video)
+        video_layout.addWidget(self.slider_video)
         video_layout.addLayout(vid_ctrl_layout)
         
         # Right: Results
@@ -330,9 +344,47 @@ class MainWindow(QMainWindow):
             ret, frame = self.cap.read()
             if ret:
                 self.display_frame(frame)
+                # Update slider if not dragging
+                if not self.is_slider_drag:
+                    current = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+                    total = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    if total > 0:
+                        val = int((current / total) * 1000)
+                        self.slider_video.blockSignals(True)
+                        self.slider_video.setValue(val)
+                        self.slider_video.blockSignals(False)
             else:
                 self.timer.stop()
                 self.is_playing = False
+                self.btn_play.setText("播放 (Play)")
+
+    def on_slider_pressed(self):
+        self.is_slider_drag = True
+        if self.is_playing:
+            self.timer.stop()
+
+    def on_slider_released(self):
+        self.is_slider_drag = False
+        if self.is_playing:
+            fps = self.cap.get(cv2.CAP_PROP_FPS) if self.cap else 30
+            self.timer.start(int(1000/fps))
+        self.seek_video(self.slider_video.value())
+
+    def seek_video(self, val):
+        if self.cap and self.cap.isOpened():
+            total = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            if total > 0:
+                frame_idx = int((val / 1000) * total)
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = self.cap.read()
+                if ret:
+                    self.display_frame(frame)
+
+    def pause_video(self):
+        if self.is_playing:
+            self.timer.stop()
+            self.is_playing = False
+            self.btn_play.setText("播放 (Play)")
 
     def toggle_play(self):
         if not self.cap:
@@ -341,11 +393,13 @@ class MainWindow(QMainWindow):
         if self.is_playing:
             self.timer.stop()
             self.is_playing = False
+            self.btn_play.setText("播放 (Play)")
         else:
             fps = self.cap.get(cv2.CAP_PROP_FPS)
             interval = int(1000/fps)
             self.timer.start(interval)
             self.is_playing = True
+            self.btn_play.setText("暫停 (Pause)")
 
     def start_analysis(self):
         if not self.video_path or not self.model_handler:
@@ -377,6 +431,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.status_bar.showMessage("正在分析中...")
         
+        import time
+        self.analysis_start_time = time.time()
+        
         thresh = self.slider_thresh.value()
         self.worker = AnalysisWorker(self.video_path, prompt, self.model_handler, threshold=thresh)
         self.worker.match_found.connect(self.add_match)
@@ -397,24 +454,38 @@ class MainWindow(QMainWindow):
             self.worker.stop()
             self.btn_stop.setEnabled(False) # Prevent multiple clicks
 
-    def add_match(self, timestamp):
-        # Convert seconds to HH:MM:SS
-        m, s = divmod(timestamp, 60)
+    def add_match(self, seconds, score=None):
+        m, s = divmod(seconds, 60)
         h, m = divmod(m, 60)
-        time_str = f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
+        time_str = "%02d:%02d:%02d" % (h, m, s)
         
-        self.list_results.addItem(f"Found at {time_str} ({int(timestamp)}s)")
-        # Scroll to bottom
+        score_str = f"[Score: {score}] " if score is not None else ""
+        item_text = f"{score_str}{time_str} ({int(seconds)}s)"
+        
+        self.list_results.addItem(item_text)
         self.list_results.scrollToBottom()
 
     def update_progress(self, val):
         self.progress_bar.setValue(int(val * 100))
 
-    def analysis_finished(self):
+    def analysis_finished(self, error=None):
         self.btn_start.setEnabled(True)
         self.btn_load.setEnabled(True)
         self.btn_stop.setEnabled(False)
-        self.status_bar.showMessage("分析完成")
+        
+        import time
+        end_time = time.time()
+        elapsed = end_time - self.analysis_start_time
+        
+        vid_dur = 0
+        if self.cap:
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            frames = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            if fps > 0: vid_dur = frames / fps
+            
+        msg = f"分析完成! 影片長度: {vid_dur:.1f}s, 分析耗時: {elapsed:.1f}s"
+        self.status_bar.showMessage(msg)
+        logger.log_signal.emit(msg)
         self.worker = None
 
     def on_result_clicked(self, item):
@@ -422,21 +493,36 @@ class MainWindow(QMainWindow):
             return
         
         text = item.text()
-        # Parse timestamp from text "Found at ... (123s)"
         try:
-            sec_str = text.split("(")[-1].replace("s)", "")
-            seconds = int(sec_str)
-            
-            self.cap.set(cv2.CAP_PROP_POS_MSEC, seconds * 1000)
-            # Show that frame immediately
-            ret, frame = self.cap.read()
-            if ret:
-                self.display_frame(frame)
-            
-            # Pause playback if playing
-            if self.is_playing:
-                self.toggle_play()
+            import re
+            match = re.search(r"\((\d+)s\)", text)
+            if match:
+                seconds = int(match.group(1))
+                fps = self.cap.get(cv2.CAP_PROP_FPS)
+                if fps > 0:
+                    target_frame = int(seconds * fps)
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+                else:
+                    self.cap.set(cv2.CAP_PROP_POS_MSEC, seconds * 1000)
                 
+                ret, frame = self.cap.read()
+                if ret:
+                    self.display_frame(frame)
+                    total = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    if total > 0:
+                        pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+                        val = int((pos/total)*1000)
+                        self.slider_video.blockSignals(True)
+                        self.slider_video.setValue(val)
+                        self.slider_video.blockSignals(False)
+                
+                # Auto-play from clicked position
+                if not self.is_playing:
+                    interval = int(1000/fps) if fps > 0 else 33
+                    self.timer.start(interval)
+                    self.is_playing = True
+                    self.btn_play.setText("暫停 (Pause)")
+            
         except Exception as e:
             print(f"Error seeking: {e}")
 
