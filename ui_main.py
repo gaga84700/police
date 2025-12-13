@@ -5,7 +5,7 @@ import cv2
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                                QFileDialog, QListWidget, QProgressBar, QSplitter, 
-                               QTextEdit, QComboBox, QSlider)
+                               QTextEdit, QComboBox, QSlider, QMessageBox)
 from PySide6.QtCore import Qt, QTimer, Slot, Signal, QThread, QObject
 from PySide6.QtGui import QImage, QPixmap
 import backend
@@ -266,28 +266,14 @@ class MainWindow(QMainWindow):
         # New Prompt Layout
         prompt_layout = QVBoxLayout()
         
-        # Input Area (ZH + Button)
-        zh_layout = QHBoxLayout()
-        
+        # Input Area (single input, no translate button)
         self.input_zh = QLineEdit()
-        self.input_zh.setPlaceholderText("在此輸入中文關鍵字 (例如: 紅色車子, 有人開門)...")
-        # self.input_zh.textChanged.connect(self.on_zh_text_changed) # Optional: enable/disable auto
-        
-        self.btn_trans = QPushButton("翻譯 (Translate)")
-        self.btn_trans.clicked.connect(self.perform_translation)
-        
-        zh_layout.addWidget(self.input_zh)
-        zh_layout.addWidget(self.btn_trans)
-        
-        prompt_layout.addLayout(zh_layout)
-        self.input_en = QLineEdit()
-        self.input_en.setPlaceholderText("Translation (English) will appear here...")
-        self.input_en.setReadOnly(True)
-        # Style to look like read-only
-        self.input_en.setStyleSheet("background-color: #2b2b2b; color: #aaaaaa; font-style: italic;")
-        
+        self.input_zh.setPlaceholderText("輸入搜尋關鍵字 (中/英文皆可, 例如: 紅色車子, person in red)...")
         prompt_layout.addWidget(self.input_zh)
-        prompt_layout.addWidget(self.input_en)
+        
+        # Hidden field for translated prompt (used internally)
+        self.input_en = QLineEdit()
+        self.input_en.setVisible(False)  # Hidden from UI
         
         # Threshold Slider
         thresh_layout = QHBoxLayout()
@@ -401,8 +387,9 @@ class MainWindow(QMainWindow):
         
         splitter.addWidget(video_container)
         splitter.addWidget(result_container)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(0, 2)  # Video area
+        splitter.setStretchFactor(1, 1)  # Results area (wider now)
+        splitter.setSizes([600, 400])   # Initial sizes
         
         main_layout.addWidget(splitter)
         
@@ -556,30 +543,64 @@ class MainWindow(QMainWindow):
 
     def start_analysis(self):
         if not self.video_path or not self.model_handler:
+            self.status_bar.showMessage("請先載入影片並等待模型載入完成")
             return
         
-        # Ensure we have English prompt
-        prompt_en = self.input_en.text()
-        prompt_zh = self.input_zh.text()
-        
-        if not prompt_en and prompt_zh:
-             self.status_bar.showMessage("正在進行翻譯 (Translating)...")
-             QApplication.processEvents() # Force UI update
-             try:
-                 # Force synchronous translation
-                 prompt_en = GoogleTranslator(source='zh-TW', target='en').translate(prompt_zh)
-                 self.input_en.setText(prompt_en)
-                 self.status_bar.showMessage(f"翻譯完成: {prompt_en}")
-             except Exception as e:
-                 print(f"Translation failed: {e}")
-                 prompt_en = prompt_zh # Fallback
-        
-        prompt = prompt_en if prompt_en else prompt_zh
-
-        if not prompt:
-            self.status_bar.showMessage("請輸入 Prompt!")
+        # Get user input
+        user_input = self.input_zh.text().strip()
+        if not user_input:
+            self.status_bar.showMessage("請輸入搜尋關鍵字!")
             return
-
+        
+        # Check if input is Chinese (contains CJK characters)
+        import re
+        has_chinese = bool(re.search(r'[\u4e00-\u9fff]', user_input))
+        
+        # Translate if Chinese
+        if has_chinese:
+            self.status_bar.showMessage("正在翻譯中...")
+            QApplication.processEvents()
+            try:
+                prompt_en = GoogleTranslator(source='zh-TW', target='en').translate(user_input)
+            except Exception as e:
+                print(f"Translation failed: {e}")
+                prompt_en = user_input  # Fallback
+        else:
+            prompt_en = user_input
+        
+        # Build the full AI prompt
+        thresh = self.slider_thresh.value()
+        if thresh > 0:
+            full_prompt = f"Rate the confidence that '{prompt_en}' is in this image from 0 to 100. Return ONLY the number."
+        else:
+            full_prompt = f"Is '{prompt_en}' visible in this image? Answer yes or no."
+        
+        # Show confirmation dialog
+        msg = QMessageBox(self)
+        msg.setWindowTitle("確認 AI 提示詞")
+        msg.setIcon(QMessageBox.Question)
+        msg.setText("即將送出以下提示詞給 AI 模型:")
+        msg.setInformativeText(f"\n{full_prompt}\n\n信賴度門檻: {thresh}%")
+        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Ok)
+        
+        # Style the dialog
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: #0a0a0f;
+            }
+            QMessageBox QLabel {
+                color: #00d4ff;
+                font-size: 12px;
+            }
+        """)
+        
+        result = msg.exec()
+        if result != QMessageBox.Ok:
+            self.status_bar.showMessage("已取消分析")
+            return
+        
+        # Proceed with analysis
         self.list_results.clear()
         self.progress_bar.setValue(0)
         self.status_bar.showMessage("正在分析中...")
@@ -587,15 +608,14 @@ class MainWindow(QMainWindow):
         import time
         self.analysis_start_time = time.time()
         
-        thresh = self.slider_thresh.value()
-        self.worker = AnalysisWorker(self.video_path, prompt, self.model_handler, threshold=thresh)
+        self.worker = AnalysisWorker(self.video_path, prompt_en, self.model_handler, threshold=thresh)
         self.worker.match_found.connect(self.add_match)
         self.worker.progress_update.connect(self.update_progress)
         self.worker.finished.connect(self.analysis_finished)
         
         # Update UI state
         self.btn_start.setEnabled(False)
-        self.btn_load.setEnabled(False) # Prevent changing video while analyzing
+        self.btn_load.setEnabled(False)
         self.btn_stop.setEnabled(True)
         
         self.worker.start()
