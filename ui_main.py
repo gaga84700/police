@@ -56,12 +56,13 @@ class AnalysisWorker(QThread):
     progress_update = Signal(float)
     finished = Signal(object)  # error or None
 
-    def __init__(self, video_path, prompt, model_handler, threshold=None):
+    def __init__(self, video_path, prompt, model_handler, threshold=None, frame_interval=1):
         super().__init__()
         self.video_path = video_path
         self.prompt = prompt
         self.model_handler = model_handler
         self.threshold = threshold
+        self.frame_interval = frame_interval
         self.processor = backend.VideoProcessor(model_handler)
 
     def run(self):
@@ -83,7 +84,8 @@ class AnalysisWorker(QThread):
             formatted_prompt, 
             self.handle_match, 
             self.handle_progress,
-            threshold=self.threshold # Pass threshold to loop
+            threshold=self.threshold,
+            frame_interval=self.frame_interval
         )
         self.finished.emit(None)
 
@@ -275,17 +277,32 @@ class MainWindow(QMainWindow):
         self.input_en = QLineEdit()
         self.input_en.setVisible(False)  # Hidden from UI
         
+        # Threshold + Speed on same row
+        settings_layout = QHBoxLayout()
+        
         # Threshold Slider
-        thresh_layout = QHBoxLayout()
         self.lbl_thresh = QLabel("信賴度門檻 (Threshold): 70%")
         self.slider_thresh = QSlider(Qt.Horizontal)
         self.slider_thresh.setRange(0, 100)
         self.slider_thresh.setValue(70)
+        self.slider_thresh.setMinimumWidth(200)  # Make slider longer
         self.slider_thresh.valueChanged.connect(self.update_thresh_label)
         
-        thresh_layout.addWidget(self.lbl_thresh)
-        thresh_layout.addWidget(self.slider_thresh)
-        prompt_layout.addLayout(thresh_layout)
+        settings_layout.addWidget(self.lbl_thresh)
+        settings_layout.addWidget(self.slider_thresh)
+        settings_layout.addStretch(1)  # Push speed to right side
+        
+        # Speed Selector (grouped tightly)
+        lbl_speed = QLabel("分析速度:")
+        lbl_speed.setFixedWidth(65)
+        settings_layout.addWidget(lbl_speed)
+        self.combo_speed = QComboBox()
+        self.combo_speed.addItems(["正常", "快速", "極速"])
+        self.combo_speed.setToolTip("正常=1秒/幀, 快速=2秒/幀, 極速=3秒/幀")
+        self.combo_speed.setFixedWidth(80)
+        settings_layout.addWidget(self.combo_speed)
+        
+        prompt_layout.addLayout(settings_layout)
         
         self.btn_start = QPushButton("▶ 開始搜尋")
         self.btn_start.clicked.connect(self.start_analysis)
@@ -608,7 +625,11 @@ class MainWindow(QMainWindow):
         import time
         self.analysis_start_time = time.time()
         
-        self.worker = AnalysisWorker(self.video_path, prompt_en, self.model_handler, threshold=thresh)
+        # Get frame interval from speed selector
+        speed_idx = self.combo_speed.currentIndex()
+        frame_interval = speed_idx + 1  # 0 -> 1s, 1 -> 2s, 2 -> 3s
+        
+        self.worker = AnalysisWorker(self.video_path, prompt_en, self.model_handler, threshold=thresh, frame_interval=frame_interval)
         self.worker.match_found.connect(self.add_match)
         self.worker.progress_update.connect(self.update_progress)
         self.worker.finished.connect(self.analysis_finished)

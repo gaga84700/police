@@ -115,13 +115,13 @@ class VideoProcessor:
         if self.thread:
             self.thread.join()
 
-    def _analyze_loop(self, video_path, prompt, callback_match, callback_progress, threshold=None):
+    def _analyze_loop(self, video_path, prompt, callback_match, callback_progress, threshold=None, frame_interval=1):
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
         
-        # We verify 1 frame per second
+        # Analyze frames at specified interval (1 = every second, 2 = every 2 seconds, etc.)
         current_sec = 0
         
         print(f"[Analysis Loop] Starting analysis: {video_path}, Duration: {duration}s, Total Frames: {total_frames}, FPS: {fps}")
@@ -176,7 +176,7 @@ class VideoProcessor:
                 print(f"[Analysis Loop] Model Error: {e}")
                 
             callback_progress(current_sec / duration)
-            current_sec += 1
+            current_sec += frame_interval  # Increment by frame_interval
         
         cap.release()
         self.running = False
